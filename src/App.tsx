@@ -66,38 +66,22 @@ const Logo = ({ className }: { className?: string }) => (
 
 export default function App() {
   const [view, setView] = useState<'shop' | 'admin' | 'reports'>('shop');
+  // --- Data Management (Client-side only for GitHub Pages) ---
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [sales, setSales] = useState<Sale[]>([]);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [lastInvoice, setLastInvoice] = useState<Sale | null>(null);
 
-  // Fetch Data
   useEffect(() => {
-    fetchData();
-    const savedCart = localStorage.getItem('mirylou_cart');
-    if (savedCart) setCart(JSON.parse(savedCart));
-  }, []);
-
-  useEffect(() => {
+    // Save cart to localStorage whenever it changes
     localStorage.setItem('mirylou_cart', JSON.stringify(cart));
   }, [cart]);
-
-  const fetchData = async () => {
-    const [pRes, cRes, sRes] = await Promise.all([
-      fetch('/api/products').then(r => r.json()),
-      fetch('/api/categories').then(r => r.json()),
-      fetch('/api/sales').then(r => r.json())
-    ]);
-    setProducts(pRes);
-    setCategories(cRes);
-    setSales(sRes);
-  };
 
   // Cart Logic
   const addToCart = (product: Product) => {
@@ -126,40 +110,91 @@ export default function App() {
 
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
+  useEffect(() => {
+    // Initialize Data from localStorage or Defaults
+    const savedProducts = localStorage.getItem('mirylou_products');
+    const savedCategories = localStorage.getItem('mirylou_categories');
+    const savedSales = localStorage.getItem('mirylou_sales');
+
+    if (savedCategories) {
+      setCategories(JSON.parse(savedCategories));
+    } else {
+      const initialCats = [
+        { id: 1, name: "Relojes" },
+        { id: 2, name: "Anillos" },
+        { id: 3, name: "Bijouterie" },
+        { id: 4, name: "Cartucheras" },
+        { id: 5, name: "Pulseras" },
+        { id: 6, name: "Aritos" }
+      ];
+      setCategories(initialCats);
+      localStorage.setItem('mirylou_categories', JSON.stringify(initialCats));
+    }
+
+    if (savedProducts) {
+      setProducts(JSON.parse(savedProducts));
+    } else {
+      const initialProducts = [
+        { id: 1, name: "Reloj Rose Gold", price: 15500, category_id: 1, image_url: "https://images.unsplash.com/photo-1524333892444-2103734a1092?auto=format&fit=crop&q=80&w=400", description: "Reloj elegante con malla de acero inoxidable." },
+        { id: 2, name: "Anillo Diamante", price: 8900, category_id: 2, image_url: "https://images.unsplash.com/photo-1605100804763-247f67b3557e?auto=format&fit=crop&q=80&w=400", description: "Anillo de plata con piedra brillante." },
+        { id: 3, name: "Pulsera Perlas", price: 4500, category_id: 5, image_url: "https://images.unsplash.com/photo-1573408302185-9127fe5a9200?auto=format&fit=crop&q=80&w=400", description: "Pulsera delicada con perlas cultivadas." },
+        { id: 4, name: "Aritos Colgantes", price: 3200, category_id: 6, image_url: "https://images.unsplash.com/photo-1535633302713-1026115e9209?auto=format&fit=crop&q=80&w=400", description: "Aritos modernos para cualquier ocasión." }
+      ];
+      setProducts(initialProducts);
+      localStorage.setItem('mirylou_products', JSON.stringify(initialProducts));
+    }
+
+    if (savedSales) setSales(JSON.parse(savedSales));
+
+    const savedCart = localStorage.getItem('mirylou_cart');
+    if (savedCart) setCart(JSON.parse(savedCart));
+  }, []);
+
+  const refreshData = () => {
+    const p = JSON.parse(localStorage.getItem('mirylou_products') || '[]');
+    const c = JSON.parse(localStorage.getItem('mirylou_categories') || '[]');
+    const s = JSON.parse(localStorage.getItem('mirylou_sales') || '[]');
+    setProducts(p);
+    setCategories(c);
+    setSales(s);
+  };
+
+  // Helper to get category name
+  const productsWithCategory = useMemo(() => {
+    return products.map(p => ({
+      ...p,
+      category_name: categories.find(c => c.id === p.category_id)?.name || 'Sin categoría'
+    }));
+  }, [products, categories]);
+
   // Filtering
   const filteredProducts = useMemo(() => {
-    return products.filter(p => {
+    return productsWithCategory.filter(p => {
       const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory ? p.category_id === selectedCategory : true;
       return matchesSearch && matchesCategory;
     });
-  }, [products, searchQuery, selectedCategory]);
+  }, [productsWithCategory, searchQuery, selectedCategory]);
 
   // Checkout
   const handleCheckout = async () => {
     setIsCheckingOut(true);
     const invoiceNumber = `INV-${Date.now()}`;
-    const newSale = {
+    const newSale: Sale = {
+      id: Date.now(),
       invoice_number: invoiceNumber,
       date: new Date().toISOString(),
       total: cartTotal,
       items: cart
     };
 
-    try {
-      await fetch('/api/sales', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSale)
-      });
-      setLastInvoice(newSale as Sale);
-      setCart([]);
-      await fetchData();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsCheckingOut(false);
-    }
+    const updatedSales = [newSale, ...sales];
+    setSales(updatedSales);
+    localStorage.setItem('mirylou_sales', JSON.stringify(updatedSales));
+    
+    setLastInvoice(newSale);
+    setCart([]);
+    setIsCheckingOut(false);
   };
 
   const downloadInvoice = async () => {
@@ -356,8 +391,8 @@ export default function App() {
           </div>
         )}
 
-        {view === 'admin' && <AdminPanel products={products} categories={categories} onRefresh={fetchData} />}
-        {view === 'reports' && <ReportsPanel sales={sales} products={products} />}
+        {view === 'admin' && <AdminPanel products={productsWithCategory} categories={categories} onRefresh={refreshData} />}
+        {view === 'reports' && <ReportsPanel sales={sales} products={productsWithCategory} />}
       </main>
 
       {/* Cart Sidebar */}
@@ -594,18 +629,27 @@ function AdminPanel({ products, categories, onRefresh }: { products: Product[], 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const url = editingProduct ? `/api/products/${editingProduct.id}` : '/api/products';
-    const method = editingProduct ? 'PUT' : 'POST';
-
-    await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const currentProducts = JSON.parse(localStorage.getItem('mirylou_products') || '[]');
+    
+    if (editingProduct) {
+      const updated = currentProducts.map((p: Product) => 
+        p.id === editingProduct.id ? { 
+          ...p, 
+          ...formData, 
+          price: parseFloat(formData.price), 
+          category_id: parseInt(formData.category_id) 
+        } : p
+      );
+      localStorage.setItem('mirylou_products', JSON.stringify(updated));
+    } else {
+      const newProduct = {
         ...formData,
+        id: Date.now(),
         price: parseFloat(formData.price),
         category_id: parseInt(formData.category_id)
-      })
-    });
+      };
+      localStorage.setItem('mirylou_products', JSON.stringify([...currentProducts, newProduct]));
+    }
 
     setIsAdding(false);
     setEditingProduct(null);
@@ -615,17 +659,17 @@ function AdminPanel({ products, categories, onRefresh }: { products: Product[], 
 
   const handleDelete = async (id: number) => {
     if (!confirm('¿Estás seguro de eliminar este producto?')) return;
-    await fetch(`/api/products/${id}`, { method: 'DELETE' });
+    const currentProducts = JSON.parse(localStorage.getItem('mirylou_products') || '[]');
+    const filtered = currentProducts.filter((p: Product) => p.id !== id);
+    localStorage.setItem('mirylou_products', JSON.stringify(filtered));
     onRefresh();
   };
 
   const handleAddCategory = async () => {
     if (!newCategory) return;
-    await fetch('/api/categories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newCategory })
-    });
+    const currentCats = JSON.parse(localStorage.getItem('mirylou_categories') || '[]');
+    const newCat = { id: Date.now(), name: newCategory };
+    localStorage.setItem('mirylou_categories', JSON.stringify([...currentCats, newCat]));
     setNewCategory('');
     onRefresh();
   };
